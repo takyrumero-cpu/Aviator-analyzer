@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090d18">
+<title>Aviator Analyzer V3</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#090d18;color:#f8fafc;font-family:Arial,sans-serif}
+main{max-width:560px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;align-items:center}
+h1{font-size:24px;margin:4px 0}.muted{color:#94a3b8;font-size:12px}.card{background:#121a2a;border:1px solid #27344d;border-radius:18px;padding:16px;margin:13px 0}
+.signal{text-align:center;padding:20px;border-radius:15px;background:#1e293b}.signal b{display:block;font-size:28px;margin:7px}
+.green{color:#4ade80}.red{color:#fb7185}.yellow{color:#facc15}
+input,button,select{width:100%;padding:13px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:#fff;font-size:15px;margin-top:8px}
+button{background:#16a34a;border:0;font-weight:700}.secondary{background:#334155}.danger{background:#be123c}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.stat{background:#0b1220;padding:12px;border-radius:12px}.stat strong{display:block;font-size:20px;margin-top:4px}
+.row{display:flex;justify-content:space-between;padding:9px 2px;border-bottom:1px solid #26324a}.history{max-height:230px;overflow:auto}
+canvas{width:100%;height:180px;background:#0b1220;border-radius:12px;margin-top:10px}
+.note{font-size:11px;color:#94a3b8;line-height:1.5}.pill{display:inline-block;padding:5px 8px;border-radius:20px;background:#27344d;font-size:11px}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><div><h1>✈️ Aviator Analyzer V3</h1><div class="muted">Entry/Exit signals + strategy simulator</div></div><span class="pill">DEMO</span></div>
+
+<div class="card">
+ <div class="muted">CURRENT STATISTICAL SIGNAL</div>
+ <div class="signal"><b id="signal">WAIT</b><span id="reason">Add round results to begin.</span></div>
+ <div class="note" style="margin-top:10px">Signals are statistical experiments based on past results. They do not predict or guarantee the next crash.</div>
+</div>
+
+<div class="card">
+ <h3>Add MWOS round</h3>
+ <input id="mult" type="number" min="1" step="0.01" placeholder="Multiplier, e.g. 2.35">
+ <button onclick="add()">Add round</button>
+</div>
+
+<div class="card">
+ <h3>Strategy settings</h3>
+ <label class="muted">Target cash-out multiplier</label>
+ <input id="target" type="number" min="1.01" step="0.01" value="1.50">
+ <label class="muted">Stake per simulated entry</label>
+ <input id="stake" type="number" min="0.01" step="0.01" value="1.00">
+ <label class="muted">Starting demo balance</label>
+ <input id="bank" type="number" min="0" step="0.01" value="100.00">
+ <button class="secondary" onclick="simulate()">Run simulation</button>
+ <button class="danger" onclick="clearAll()">Clear rounds</button>
+</div>
+
+<div class="card">
+ <h3>Simulation result</h3>
+ <div class="grid">
+  <div class="stat">Entries<strong id="entries">—</strong></div>
+  <div class="stat">Wins<strong id="wins">—</strong></div>
+  <div class="stat">Losses<strong id="losses">—</strong></div>
+  <div class="stat">Demo P/L<strong id="pl">—</strong></div>
+ </div>
+ <p class="note">Simulation assumes an entry whenever the analyzer produces ENTRY WATCH, then settles that simulated stake at the selected target using the recorded round result.</p>
+</div>
+
+<div class="card">
+ <h3>Recent multipliers</h3>
+ <canvas id="chart" width="500" height="180"></canvas>
+ <div class="history" id="history">No rounds yet.</div>
+</div>
+
+<div class="card">
+ <h3>Statistics</h3>
+ <div class="grid">
+  <div class="stat">Rounds<strong id="count">0</strong></div>
+  <div class="stat">Average<strong id="avg">—</strong></div>
+  <div class="stat">Median<strong id="med">—</strong></div>
+  <div class="stat">Below 2x<strong id="below">—</strong></div>
+ </div>
+</div>
+</main>
+<script>
+let data=JSON.parse(localStorage.getItem("aviator_v3")||"[]");
+const $=id=>document.getElementById(id);
+function save(){localStorage.setItem("aviator_v3",JSON.stringify(data))}
+function add(){let v=parseFloat($("mult").value);if(!Number.isFinite(v)||v<1){alert("Enter a valid multiplier.");return}data.unshift(v);if(data.length>500)data.pop();save();$("mult").value="";render()}
+function med(a){a=[...a].sort((x,y)=>x-y);let n=a.length;return n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2}
+function getSignal(){
+ if(data.length<10)return ["WAIT","Need at least 10 recorded rounds for this experimental signal."];
+ let r=data.slice(0,10), low=r.filter(x=>x<2).length, high=r.filter(x=>x>=2).length;
+ let avg=r.reduce((a,b)=>a+b,0)/r.length;
+ if(low>=8)return ["ENTRY WATCH","Recent 10 rounds contain many low multipliers; this is a statistical watch condition, not a prediction."];
+ if(avg>=4)return ["WAIT","Recent volatility/average is elevated; no entry condition is triggered by this simple strategy."];
+ return ["WAIT","No entry condition is triggered by the current rules."];
+}
+function render(){
+ let s=getSignal();$("signal").textContent=s[0];$("signal").className=s[0].includes("ENTRY")?"green":"yellow";$("reason").textContent=s[1];
+ if(!data.length){$("history").textContent="No rounds yet.";draw();return}
+ let avg=data.reduce((a,b)=>a+b,0)/data.length;
+ $("count").textContent=data.length;$("avg").textContent=avg.toFixed(2)+"x";$("med").textContent=med(data).toFixed(2)+"x";
+ $("below").textContent=Math.round(data.filter(x=>x<2).length/data.length*100)+"%";
+ $("history").innerHTML=data.slice(0,100).map((x,i)=>`<div class="row"><span>Round ${data.length-i}</span><b>${x.toFixed(2)}x</b></div>`).join("");
+ draw();
+}
+function simulate(){
+ if(data.length<10){alert("Add at least 10 rounds first.");return}
+ let target=parseFloat($("target").value), stake=parseFloat($("stake").value), balance=parseFloat($("bank").value);
+ if(!(target>1)&&!(stake>0)){alert("Check settings.");return}
+ let entries=0,wins=0,losses=0;
+ // Walk from oldest to newest. Entry rule: previous 10 recorded rounds had >=8 below 2x.
+ for(let i=data.length-1;i>=10;i--){
+   let recent=data.slice(i-10,i), low=recent.filter(x=>x<2).length;
+   if(low>=8 && balance>=stake){
+     entries++;
+     if(data[i]>=target){wins++;balance+=stake*(target-1)}else{losses++;balance-=stake}
+   }
+ }
+ $("entries").textContent=entries;$("wins").textContent=wins;$("losses").textContent=losses;
+ let start=parseFloat($("bank").value), pl=balance-start;
+ $("pl").textContent=(pl>=0?"+":"")+pl.toFixed(2)+" USD";
+ $("pl").className=pl>=0?"green":"red";
+}
+function clearAll(){if(confirm("Delete all recorded rounds?")){data=[];save();render();$("entries").textContent=$("wins").textContent=$("losses").textContent=$("pl").textContent="—"}}
+function draw(){
+ let c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
+ let vals=data.slice(0,40).reverse();if(!vals.length)return;
+ let max=Math.max(5,...vals),min=1, pad=12;
+ ctx.beginPath();
+ vals.forEach((v,i)=>{let x=pad+i*(w-2*pad)/Math.max(1,vals.length-1), y=h-pad-(v-min)/(max-min)*(h-2*pad);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+ ctx.strokeStyle="#60a5fa";ctx.lineWidth=2;ctx.stroke();
+}
+render();
+</script>
+</body>
+</html>
